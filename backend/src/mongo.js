@@ -1,6 +1,6 @@
-import mongoose from 'mongoose'
-import { MONGODB_URI } from './utils/config.js'
-import logger from './utils/logger.js'
+const mongoose = require('mongoose')
+const { MONGODB_URI } = require('./utils/config')
+const logger = require('./utils/logger')
 
 mongoose.set('strictQuery', false)
 

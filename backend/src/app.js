@@ -1,8 +1,12 @@
-import express from 'express'
-import cors from 'cors'
-import blogsRouter from './controllers/blogs.js'
-import { requestLogger, unknownEndpoint, errorHandler } from './utils/middleware.js'
-import './mongo.js'
+const express = require('express')
+const cors = require('cors')
+const blogsRouter = require('./controllers/blogs')
+const {
+  requestLogger,
+  unknownEndpoint,
+  errorHandler
+} = require('./utils/middleware')
+require('./mongo')   // just run the mongo.js file
 
 const app = express()
 
@@ -15,4 +19,4 @@ app.use('/api/blogs', blogsRouter)
 app.use(unknownEndpoint)
 app.use(errorHandler)
 
-export default app
+module.exports = app
