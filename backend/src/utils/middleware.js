@@ -1,4 +1,6 @@
 const logger = require('./logger')
+const jwt = require('jsonwebtoken')
+const User = require('../models/user')
 
 const requestLogger = (request, response, next) => {
   logger.info('Method:', request.method)
@@ -19,13 +21,54 @@ const errorHandler = (error, request, response, next) => {
     return response.status(400).send({ error: 'malformatted id' })
   } else if (error.name === 'ValidationError') {
     return response.status(400).json({ error: error.message })
+  } else if (error.name === 'MongoServerError' && error.code === 11000) {
+    return response.status(400).json({ error: 'expected `username` to be unique' })
+  } else if (error.name === 'JsonWebTokenError') {
+    return response.status(401).json({ error: 'token invalid' })
   }
 
   next(error)
+}
+
+const tokenExtractor = (req, res, next) => {
+  const authorization = req.get('authorization')
+  console.log('>>> tokenExtractor header:', authorization)   // debug
+  if (authorization && authorization.startsWith('Bearer ')) {
+    req.token = authorization.slice(7)
+  } else {
+    req.token = null
+  }
+  console.log('>>> tokenExtractor req.token:', req.token)   // debug
+  next()
+}
+
+
+const userExtractor = async (req, res, next) => {
+  try {
+    if (!req.token) {
+      console.log('>>> userExtractor: no token present')
+      return res.status(401).json({ error: 'token missing' })
+    }
+
+    const decodedToken = jwt.verify(req.token, process.env.SECRET)
+
+    if (!decodedToken.id) {
+      return res.status(401).json({ error: 'token invalid' })
+    }
+    req.user = await User.findById(decodedToken.id)
+    next()
+  } catch (error) {
+    if (error.name === 'TokenExpiredError') {
+      return res.status(401).json({ error: 'token expired' })
+    }
+    return res.status(401).json({ error: 'token invalid or expired' })
+  }
 }
 
 module.exports = {
   requestLogger,
   unknownEndpoint,
   errorHandler,
+  tokenExtractor,
+  userExtractor,
 }

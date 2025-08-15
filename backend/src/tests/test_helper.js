@@ -1,33 +1,33 @@
 const Blog = require('../models/blog')
+const User = require('../models/user')
 
 const initialBlogs = [
   {
     title: 'HTML is easy',
-    author: 'John Doe',
-    url: 'http://example.com/html',
-    likes: 5
+    author: 'Michael Chan',
+    url: 'https://example.com/html',
+    likes: 7
   },
   {
-    title: 'CSS is amazing',
-    author: 'Jane Smith',
-    url: 'http://example.com/css',
-    likes: 10
+    title: 'Browser can execute only via user',
+    author: 'Matti Luukkainen',
+    url: 'https://example.com/browser',
+    likes: 5
   }
 ]
 
-const nonExistingId = async () => {
-  const blog = new Blog({ content: 'willremovethissoon' })
-  await blog.save()
-  await blog.deleteOne()
-
-  return blog._id.toString()
-}
-
 const blogsInDb = async () => {
   const blogs = await Blog.find({})
-  return blogs.map(blog => blog.toJSON())
+  return blogs.map(b => b.toJSON())
+}
+
+const usersInDb = async () => {
+  const users = await User.find({})
+  return users.map(u => u.toJSON())
 }
 
 module.exports = {
-  initialBlogs, nonExistingId, blogsInDb
+  initialBlogs,
+  blogsInDb,
+  usersInDb
 }

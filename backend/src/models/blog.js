@@ -1,4 +1,5 @@
 const mongoose = require('mongoose')
+const User = require('./user')
 
 const blogSchema = new mongoose.Schema({
   title: {
@@ -6,9 +7,13 @@ const blogSchema = new mongoose.Schema({
     required: true,  // must have title
   },
   author: String,
-  url:  {
+  url: {
     type: String,
     required: true,  // must have author
+  },
+  user: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
   },
   likes: {
     type: Number,

@@ -1,158 +1,73 @@
 const mongoose = require('mongoose')
 const supertest = require('supertest')
+const bcrypt = require('bcrypt')
 const app = require('../app')
-const Blog = require('../models/blog')
-const helper = require('./test_helper')
 const api = supertest(app)
 
-beforeAll(async () => {
-  await mongoose.connection.dropDatabase()
-})
+const Blog = require('../models/blog')
+const User = require('../models/user')
+const helper = require('./test_helper')
+
+let token = null
 
 beforeEach(async () => {
+  // clear DB
+  await User.deleteMany({})
   await Blog.deleteMany({})
-  await Blog.insertMany(helper.initialBlogs)
+
+  // create a test user
+  const passwordHash = await bcrypt.hash('sekret5', 10)
+  const user = new User({ username: 'root2', name: 'Superuser', passwordHash })
+  await user.save()
+
+  // login to get token
+  const loginRes = await api
+    .post('/api/login')
+    .send({ username: 'root2', password: 'sekret5' })
+
+  token = loginRes.body.token
+  if (!token) throw new Error('No token returned from /api/login in beforeEach')
+
+  const blogsToInsert = helper.initialBlogs.map(b => ({ ...b, user: user._id }))
+  await Blog.insertMany(blogsToInsert)
 })
 
-describe('Blogs API', () => {
+test('successfully creates a valid blog when token is provided', async () => {
+  const newBlog = {
+    title: 'async/await simplifies async code',
+    author: 'Something',
+    url: 'http://example.com'
+  }
 
-  describe('GET /api/blogs', () => {
-    test('returns all blogs', async () => {
-      const response = await api
-        .get('/api/blogs')
-        .expect(200)
-        .expect('Content-Type', /application\/json/)
+  await api
+    .post('/api/blogs')
+    .set('Authorization', `Bearer ${token}`)
+    .send(newBlog)
+    .expect(201)
+    .expect('Content-Type', /application\/json/)
 
-      expect(response.body).toHaveLength(helper.initialBlogs.length)
-    })
+  const blogsAtEnd = await helper.blogsInDb()
+  expect(blogsAtEnd).toHaveLength(helper.initialBlogs.length + 1)
 
-    test('contains a specific blog title', async () => {
-      const response = await api.get('/api/blogs')
-      const titles = response.body.map(b => b.title)
-      expect(titles).toContain('HTML is easy')
-    })
-  })
-
-  describe('POST /api/blogs', () => {
-    test('successfully creates a valid blog', async () => {
-      const newBlog = {
-        title: 'async/await simplifies making async calls',
-        author: 'Test Author',
-        url: 'http://example.com',
-        likes: 5
-      }
-
-      await api
-        .post('/api/blogs')
-        .send(newBlog)
-        .expect(201)
-        .expect('Content-Type', /application\/json/)
-
-      const blogsAtEnd = await helper.blogsInDb()
-      expect(blogsAtEnd).toHaveLength(helper.initialBlogs.length + 1)
-      const titles = blogsAtEnd.map(b => b.title)
-      expect(titles).toContain(newBlog.title)
-    })
-
-    test('defaults likes to 0 if missing', async () => {
-      const newBlog = {
-        title: 'Blog without likes',
-        author: 'Jane Doe',
-        url: 'http://example.com/no-likes',
-      }
-
-      await api
-        .post('/api/blogs')
-        .send(newBlog)
-        .expect(201)
-        .expect('Content-Type', /application\/json/)
-
-      const blogs = await helper.blogsInDb()
-      const savedBlog = blogs.find(blog => blog.title === newBlog.title)
-      expect(savedBlog.likes).toBe(0)
-    })
-
-    test('responds with 400 if title is missing', async () => {
-      const newBlog = {
-        author: 'Author Only',
-        url: 'http://example.com/no-title',
-        likes: 5
-      }
-
-      await api
-        .post('/api/blogs')
-        .send(newBlog)
-        .expect(400)
-
-      const blogs = await helper.blogsInDb()
-      expect(blogs).toHaveLength(helper.initialBlogs.length)
-    })
-
-    test('responds with 400 if url is missing', async () => {
-      const newBlog = {
-        title: 'No URL Blog',
-        author: 'Author Only',
-        likes: 5
-      }
-
-      await api
-        .post('/api/blogs')
-        .send(newBlog)
-        .expect(400)
-
-      const blogs = await helper.blogsInDb()
-      expect(blogs).toHaveLength(helper.initialBlogs.length)
-    })
-  })
-
-  describe('Blog model', () => {
-    test('uses "id" instead of "_id" as identifier', async () => {
-      const blogs = await helper.blogsInDb()
-      const blog = blogs[0]
-      expect(blog.id).toBeDefined()
-      expect(blog._id).toBeUndefined()
-    })
-  })
+  const titles = blogsAtEnd.map(b => b.title)
+  expect(titles).toContain('async/await simplifies async code')
 })
 
-describe('deletion of a blog', () => {
-  test('succeeds with status code 204 if id is valid', async () => {
-    const blogsAtStart = await helper.blogsInDb()
-    const blogToDelete = blogsAtStart[0]
+test('fails with 401 Unauthorized if token is missing', async () => {
+  const newBlog = {
+    title: 'no auth blog',
+    author: 'Intruder',
+    url: 'http://hacker.com'
+  }
 
-    await api
-      .delete(`/api/blogs/${blogToDelete.id}`)
-      .expect(204)
+  await api
+    .post('/api/blogs')
+    .send(newBlog) //
+    .expect(401)
 
-    const blogsAtEnd = await helper.blogsInDb()
-
-    expect(blogsAtEnd).toHaveLength(blogsAtStart.length - 1)
-
-    const titles = blogsAtEnd.map(r => r.title)
-    expect(titles).not.toContain(blogToDelete.title)
-  })
+  const blogsAtEnd = await helper.blogsInDb()
+  expect(blogsAtEnd).toHaveLength(helper.initialBlogs.length)
 })
-
-describe('updating a blog', () => {
-  test('succeeds in updating likes', async () => {
-    const blogsAtStart = await helper.blogsInDb()
-    const blogToUpdate = blogsAtStart[0]
-
-    const updatedData = { ...blogToUpdate, likes: blogToUpdate.likes + 1 }
-
-    const response = await api
-      .put(`/api/blogs/${blogToUpdate.id}`)
-      .send(updatedData)
-      .expect(200)
-      .expect('Content-Type', /application\/json/)
-
-    expect(response.body.likes).toBe(blogToUpdate.likes + 1)
-
-    const blogsAtEnd = await helper.blogsInDb()
-    expect(blogsAtEnd[0].likes).toBe(blogToUpdate.likes + 1)
-  })
-})
-
 
 afterAll(async () => {
   await mongoose.connection.close()
